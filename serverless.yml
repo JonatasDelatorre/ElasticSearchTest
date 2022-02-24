@@ -1,4 +1,4 @@
-service: kinesis-stream-exemple
+service: opensearch-test
 
 variablesResolutionMode: 20210326
 
@@ -41,90 +41,86 @@ package:
     - '!step_functions.yml'
 
 functions:
-  # ConsumerLambda:
-  #   handler: src/kinesis_consumer.handler
-  #   name: ${self:service}-consumer-${self:custom.stage}
-  #   description: Lambda for kinesis stream consumer
-  #   memorySize: 1024
-  #   timeout: 300
-  #   events:
-  #     - stream:
-  #         type: kinesis
-  #         arn: !GetAtt KinesisClickStream.Arn
-  #   environment:
-  #     BUCKET: !Ref ClickstreamOutput
-  #     TOPIC: !Ref ClickstreamTopicTest
-  #   package:
-  #     patterns:
-  #       - src/kinesis_consumer.py
-  #   iamRoleStatementsName: ${self:service}-consumer-${self:custom.stage}
-  #   iamRoleStatements:
-  #     - Effect: "Allow"
-  #       Action:
-  #         - s3:GetObject
-  #         - s3:GetObjectVersion
-  #         - s3:ListBucket
-  #         - s3:PutObject
-  #         - s3:GetObject
-  #         - s3:GetObjectVersion
-  #         - s3:ListBucket
-  #       Resource:
-  #         - !GetAtt ClickstreamOutput.Arn
-  #         - !Join [ "", [ !GetAtt ClickstreamOutput.Arn, "/*"] ]
-  #     - Effect: "Allow"
-  #       Action:
-  #         - sns:Publish
-  #       Resource:
-  #         - !Ref ClickstreamTopicTest
-  #     - Effect: "Allow"
-  #       Action:
-  #         - kinesis:DescribeStream
-  #         - kinesis:DescribeStreamSummary
-  #         - kinesis:GetRecords
-  #         - kinesis:ListShards
-  #         - kinesis:GetShardIterator
-  #         - kinesis:ListStreams
-  #         - kinesis:SubscribeToShard
-  #       Resource:
-  #         - !GetAtt KinesisClickStream.Arn
+  ConsumerLambda:
+    handler: src/kinesis_consumer.handler
+    name: ${self:service}-consumer-${self:custom.stage}
+    description: Lambda for kinesis stream consumer
+    memorySize: 1024
+    timeout: 300
+    events:
+      - stream:
+          type: kinesis
+          arn: !GetAtt KinesisClickStream.Arn
+    environment:
+      BUCKET: !Ref ClickstreamOutput
+      OPENSEARCH: !GetAtt OpenSearchClickstream.DomainEndpoint
+    package:
+      patterns:
+        - src/kinesis_consumer.py
+    iamRoleStatementsName: ${self:service}-consumer-${self:custom.stage}
+    iamRoleStatements:
+      - Effect: "Allow"
+        Action:
+          - s3:GetObject
+          - s3:GetObjectVersion
+          - s3:ListBucket
+          - s3:PutObject
+          - s3:GetObject
+          - s3:GetObjectVersion
+          - s3:ListBucket
+        Resource:
+          - !GetAtt ClickstreamOutput.Arn
+          - !Join [ "", [ !GetAtt ClickstreamOutput.Arn, "/*"] ]
+      - Effect: "Allow"
+        Action:
+          - kinesis:DescribeStream
+          - kinesis:DescribeStreamSummary
+          - kinesis:GetRecords
+          - kinesis:ListShards
+          - kinesis:GetShardIterator
+          - kinesis:ListStreams
+          - kinesis:SubscribeToShard
+        Resource:
+          - !GetAtt KinesisClickStream.Arn
 
 resources:
   Resources:
-    # KinesisClickStream:
-    #   Type: AWS::Kinesis::Stream
-    #   Properties: 
-    #     Name: ${self:service}-clickstream-${self:custom.stage}
-    #     ShardCount: 1
-    #     StreamModeDetails: 
-    #       StreamMode: PROVISIONED
+    KinesisClickStream:
+      Type: AWS::Kinesis::Stream
+      Properties: 
+        Name: ${self:service}-clickstream-${self:custom.stage}
+        ShardCount: 1
+        StreamModeDetails: 
+          StreamMode: PROVISIONED
 
-    # ClickstreamOutput:
-    #   Type: AWS::S3::Bucket
-    #   Properties:
-    #     VersioningConfiguration:
-    #       Status: Enabled
-    #     BucketEncryption:
-    #       ServerSideEncryptionConfiguration:
-    #         - ServerSideEncryptionByDefault:
-    #             SSEAlgorithm: AES256
-    #     BucketName: !Sub ${self:service}-clickstream-output-${AWS::AccountId}-${self:custom.stage}
+    ClickstreamOutput:
+      Type: AWS::S3::Bucket
+      Properties:
+        VersioningConfiguration:
+          Status: Enabled
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        BucketName: !Sub ${self:service}-clickstream-output-${AWS::AccountId}-${self:custom.stage}
 
-    ElasticSearchVpc:
+    OpenSearchVpc:
       Type: AWS::EC2::VPC
       Properties: 
         CidrBlock: 10.0.0.0/24
 
-    ElasticSearchSubnetA:
+    OpenSearchSubnetA:
       Type: AWS::EC2::Subnet
       Properties: 
         AvailabilityZone: us-east-1a
         CidrBlock: 10.0.0.1/24
-        VpcId: !Ref ElasticSearchVpc
+        VpcId: !Ref OpenSearchVpc
 
-    ElasticSearchSecurityGroupA:
+    OpenSearchSecurityGroupA:
       Type: AWS::EC2::SecurityGroup
       Properties: 
         GroupName: ${self:service}-clickstream-${self:custom.stage}
+        GroupDescription: OpenSearch SG
         SecurityGroupIngress:
           - CidrIp: 0.0.0.0/0
             IpProtocol: "-1"
@@ -137,32 +133,40 @@ resources:
             FromPort: 443
             ToPort: 443
             CidrIp: 10.0.0.0/24
-        VpcId: !Ref ElasticSearchVpc
+        VpcId: !Ref OpenSearchVpc
 
-    # OpenSearchClickstream:
-    #   Type: AWS::OpenSearchService::Domain
-    #   Properties: 
-    #     AccessPolicies:
-    #       Version: '2012-10-17'
-    #       Statement:
-    #       - Effect: Allow
-    #         Principal:
-    #           AWS: "*"
-    #         Action:
-    #           - es:*
-    #         Resource: arn:aws:es:us-east-1:103751604192:domain//*
-    #         Condition:
-    #           IpAddress:
-    #             aws:SourceIp:
-    #               - 189.6.237.237
-    #     ClusterConfig: 
-    #       InstanceCount: 1
-    #       InstanceType: t3.small.search
-    #     DomainName: ${self:service}-clickstream-${self:custom.stage}
-    #     EncryptionAtRestOptions: 
-    #       Enabled: true
-    #     VPCOptions: 
-    #       VPCOptions
+    OpenSearchClickstream:
+      Type: AWS::OpenSearchService::Domain
+      Properties: 
+        AccessPolicies:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Principal:
+              AWS: "*"
+            Action:
+              - es:*
+            Resource: arn:aws:es:us-east-1:103751604192:domain//*
+            Condition:
+              IpAddress:
+                aws:SourceIp:
+                  - 189.6.237.237
+        ClusterConfig: 
+          InstanceCount: 1
+          InstanceType: t3.small.search
+        EBSOptions: 
+          EBSEnabled: true
+          VolumeSize: 10
+          VolumeType: gp2
+        DomainName: ${self:service}-${self:custom.stage}
+        EncryptionAtRestOptions: 
+          Enabled: true
+        VPCOptions: 
+          SecurityGroupIds: 
+            - !Ref OpenSearchSecurityGroupA
+          SubnetIds: 
+            - !Ref OpenSearchSubnetA
+
 
 
 plugins:

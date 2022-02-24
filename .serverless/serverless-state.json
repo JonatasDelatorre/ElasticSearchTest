@@ -1,0 +1,715 @@
+{
+  "service": {
+    "service": "opensearch-test",
+    "serviceObject": {
+      "name": "opensearch-test"
+    },
+    "provider": {
+      "name": "aws",
+      "runtime": "python3.8",
+      "stage": "dev",
+      "region": "us-east-1",
+      "stackName": "opensearch-test-dev",
+      "lambdaHashingVersion": "20201221",
+      "stackTags": {
+        "Owner": "JontasDelatorre"
+      },
+      "deploymentBucket": "opensearch-test-deployment-dev",
+      "versionFunctions": true,
+      "deploymentBucketObject": {
+        "name": "opensearch-test-deployment-dev",
+        "serverSideEncryption": "AES256"
+      },
+      "compiledCloudFormationTemplate": {
+        "AWSTemplateFormatVersion": "2010-09-09",
+        "Description": "The AWS CloudFormation template for this Serverless application",
+        "Resources": {
+          "ConsumerLambdaLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+              "LogGroupName": "/aws/lambda/opensearch-test-consumer-dev"
+            }
+          },
+          "IamRoleLambdaExecution": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+              "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": {
+                      "Service": [
+                        "lambda.amazonaws.com"
+                      ]
+                    },
+                    "Action": [
+                      "sts:AssumeRole"
+                    ]
+                  }
+                ]
+              },
+              "Policies": [
+                {
+                  "PolicyName": {
+                    "Fn::Join": [
+                      "-",
+                      [
+                        "opensearch-test",
+                        "dev",
+                        "lambda"
+                      ]
+                    ]
+                  },
+                  "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "logs:CreateLogStream",
+                          "logs:CreateLogGroup"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/opensearch-test-consumer-dev:*"
+                          }
+                        ]
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "logs:PutLogEvents"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/opensearch-test-consumer-dev:*:*"
+                          }
+                        ]
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "kinesis:GetRecords",
+                          "kinesis:GetShardIterator",
+                          "kinesis:DescribeStream",
+                          "kinesis:ListStreams"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::GetAtt": [
+                              "KinesisClickStream",
+                              "Arn"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ],
+              "Path": "/",
+              "RoleName": {
+                "Fn::Join": [
+                  "-",
+                  [
+                    "opensearch-test",
+                    "dev",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    "lambdaRole"
+                  ]
+                ]
+              }
+            }
+          },
+          "ConsumerLambdaLambdaFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+              "Code": {
+                "S3Bucket": "opensearch-test-deployment-dev",
+                "S3Key": "serverless/opensearch-test/dev/1645687308422-2022-02-24T07:21:48.422Z/ConsumerLambda.zip"
+              },
+              "Handler": "src/kinesis_consumer.handler",
+              "Runtime": "python3.8",
+              "FunctionName": "opensearch-test-consumer-dev",
+              "MemorySize": 1024,
+              "Timeout": 300,
+              "Description": "Lambda for kinesis stream consumer",
+              "Environment": {
+                "Variables": {
+                  "BUCKET": {
+                    "Ref": "ClickstreamOutput"
+                  },
+                  "OPENSEARCH": {
+                    "Fn::GetAtt": [
+                      "OpenSearchClickstream",
+                      "DomainEndpoint"
+                    ]
+                  }
+                }
+              },
+              "Role": {
+                "Fn::GetAtt": [
+                  "ConsumerLambdaIamRoleLambdaExecution",
+                  "Arn"
+                ]
+              }
+            },
+            "DependsOn": [
+              "ConsumerLambdaIamRoleLambdaExecution",
+              "ConsumerLambdaLogGroup"
+            ]
+          },
+          "ConsumerLambdaLambdaVersion5IQqZTKm4SEKBR0T8CAw3zKtkQvst8KmAefH379iE": {
+            "Type": "AWS::Lambda::Version",
+            "DeletionPolicy": "Retain",
+            "Properties": {
+              "FunctionName": {
+                "Ref": "ConsumerLambdaLambdaFunction"
+              },
+              "CodeSha256": "7kUoxdiFHRYZXm2FCBzGFEGRZFVfXaYaHxGJhFViH5s=",
+              "Description": "Lambda for kinesis stream consumer"
+            }
+          },
+          "ConsumerLambdaEventSourceMappingKinesisKinesisClickStream": {
+            "Type": "AWS::Lambda::EventSourceMapping",
+            "DependsOn": "ConsumerLambdaIamRoleLambdaExecution",
+            "Properties": {
+              "BatchSize": 10,
+              "Enabled": true,
+              "EventSourceArn": {
+                "Fn::GetAtt": [
+                  "KinesisClickStream",
+                  "Arn"
+                ]
+              },
+              "FunctionName": {
+                "Fn::GetAtt": [
+                  "ConsumerLambdaLambdaFunction",
+                  "Arn"
+                ]
+              },
+              "StartingPosition": "TRIM_HORIZON"
+            }
+          },
+          "ConsumerLambdaIamRoleLambdaExecution": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+              "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": {
+                      "Service": [
+                        "lambda.amazonaws.com"
+                      ]
+                    },
+                    "Action": [
+                      "sts:AssumeRole"
+                    ]
+                  }
+                ]
+              },
+              "Policies": [
+                {
+                  "PolicyName": {
+                    "Fn::Join": [
+                      "-",
+                      [
+                        "opensearch-test",
+                        "dev",
+                        "lambda"
+                      ]
+                    ]
+                  },
+                  "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "logs:CreateLogStream",
+                          "logs:CreateLogGroup",
+                          "logs:PutLogEvents"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/opensearch-test-consumer-dev:*:*"
+                          }
+                        ]
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "kinesis:GetRecords",
+                          "kinesis:GetShardIterator",
+                          "kinesis:DescribeStream",
+                          "kinesis:ListStreams"
+                        ],
+                        "Resource": [
+                          {
+                            "$ref": "$[\"service\"][\"provider\"][\"compiledCloudFormationTemplate\"][\"Resources\"][\"IamRoleLambdaExecution\"][\"Properties\"][\"Policies\"][0][\"PolicyDocument\"][\"Statement\"][2][\"Resource\"][0]"
+                          }
+                        ]
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "s3:GetObject",
+                          "s3:GetObjectVersion",
+                          "s3:ListBucket",
+                          "s3:PutObject",
+                          "s3:GetObject",
+                          "s3:GetObjectVersion",
+                          "s3:ListBucket"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::GetAtt": [
+                              "ClickstreamOutput",
+                              "Arn"
+                            ]
+                          },
+                          {
+                            "Fn::Join": [
+                              "",
+                              [
+                                {
+                                  "Fn::GetAtt": [
+                                    "ClickstreamOutput",
+                                    "Arn"
+                                  ]
+                                },
+                                "/*"
+                              ]
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "kinesis:DescribeStream",
+                          "kinesis:DescribeStreamSummary",
+                          "kinesis:GetRecords",
+                          "kinesis:ListShards",
+                          "kinesis:GetShardIterator",
+                          "kinesis:ListStreams",
+                          "kinesis:SubscribeToShard"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::GetAtt": [
+                              "KinesisClickStream",
+                              "Arn"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ],
+              "Path": "/",
+              "RoleName": "opensearch-test-consumer-dev",
+              "ManagedPolicyArns": []
+            }
+          },
+          "KinesisClickStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+              "Name": "opensearch-test-clickstream-dev",
+              "ShardCount": 1,
+              "StreamModeDetails": {
+                "StreamMode": "PROVISIONED"
+              }
+            }
+          },
+          "ClickstreamOutput": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+              "VersioningConfiguration": {
+                "Status": "Enabled"
+              },
+              "BucketEncryption": {
+                "ServerSideEncryptionConfiguration": [
+                  {
+                    "ServerSideEncryptionByDefault": {
+                      "SSEAlgorithm": "AES256"
+                    }
+                  }
+                ]
+              },
+              "BucketName": {
+                "Fn::Sub": "opensearch-test-clickstream-output-${AWS::AccountId}-dev"
+              }
+            }
+          },
+          "OpenSearchVpc": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+              "CidrBlock": "10.0.0.0/24"
+            }
+          },
+          "OpenSearchSubnetA": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+              "AvailabilityZone": "us-east-1a",
+              "CidrBlock": "10.0.0.1/24",
+              "VpcId": {
+                "Ref": "OpenSearchVpc"
+              }
+            }
+          },
+          "OpenSearchSecurityGroupA": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+              "GroupName": "opensearch-test-clickstream-dev",
+              "GroupDescription": "OpenSearch SG",
+              "SecurityGroupIngress": [
+                {
+                  "CidrIp": "0.0.0.0/0",
+                  "IpProtocol": "-1"
+                }
+              ],
+              "SecurityGroupEgress": [
+                {
+                  "IpProtocol": "tcp",
+                  "FromPort": 22,
+                  "ToPort": 22,
+                  "CidrIp": "10.0.0.0/24"
+                },
+                {
+                  "IpProtocol": "tcp",
+                  "FromPort": 443,
+                  "ToPort": 443,
+                  "CidrIp": "10.0.0.0/24"
+                }
+              ],
+              "VpcId": {
+                "Ref": "OpenSearchVpc"
+              }
+            }
+          },
+          "OpenSearchClickstream": {
+            "Type": "AWS::OpenSearchService::Domain",
+            "Properties": {
+              "AccessPolicies": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": {
+                      "AWS": "*"
+                    },
+                    "Action": [
+                      "es:*"
+                    ],
+                    "Resource": "arn:aws:es:us-east-1:103751604192:domain//*",
+                    "Condition": {
+                      "IpAddress": {
+                        "aws:SourceIp": [
+                          "189.6.237.237"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "ClusterConfig": {
+                "InstanceCount": 1,
+                "InstanceType": "t3.small.search"
+              },
+              "EBSOptions": {
+                "EBSEnabled": true,
+                "VolumeSize": 10,
+                "VolumeType": "gp2"
+              },
+              "DomainName": "opensearch-test-dev",
+              "EncryptionAtRestOptions": {
+                "Enabled": true
+              },
+              "VPCOptions": {
+                "SecurityGroupIds": [
+                  {
+                    "Ref": "OpenSearchSecurityGroupA"
+                  }
+                ],
+                "SubnetIds": [
+                  {
+                    "Ref": "OpenSearchSubnetA"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "Outputs": {
+          "ServerlessDeploymentBucketName": {
+            "Value": "opensearch-test-deployment-dev",
+            "Export": {
+              "Name": "sls-opensearch-test-dev-ServerlessDeploymentBucketName"
+            }
+          },
+          "ConsumerLambdaLambdaFunctionQualifiedArn": {
+            "Description": "Current Lambda function version",
+            "Value": {
+              "Ref": "ConsumerLambdaLambdaVersion5IQqZTKm4SEKBR0T8CAw3zKtkQvst8KmAefH379iE"
+            },
+            "Export": {
+              "Name": "sls-opensearch-test-dev-ConsumerLambdaLambdaFunctionQualifiedArn"
+            }
+          }
+        }
+      },
+      "vpc": {}
+    },
+    "custom": {
+      "stage": "dev",
+      "region": "us-east-1",
+      "deployment_bucket": "opensearch-test-deployment-dev",
+      "accountid": "103751604192",
+      "pythonRequirements": {
+        "dockerizePip": "non-linux"
+      },
+      "individually-for-dev": {
+        "dev": false
+      }
+    },
+    "plugins": [
+      "serverless-iam-roles-per-function",
+      "serverless-python-requirements",
+      "serverless-deployment-bucket"
+    ],
+    "pluginsData": {},
+    "functions": {
+      "ConsumerLambda": {
+        "handler": "src/kinesis_consumer.handler",
+        "name": "opensearch-test-consumer-dev",
+        "description": "Lambda for kinesis stream consumer",
+        "memorySize": 1024,
+        "timeout": 300,
+        "events": [
+          {
+            "stream": {
+              "type": "kinesis",
+              "arn": {
+                "$ref": "$[\"service\"][\"provider\"][\"compiledCloudFormationTemplate\"][\"Resources\"][\"IamRoleLambdaExecution\"][\"Properties\"][\"Policies\"][0][\"PolicyDocument\"][\"Statement\"][2][\"Resource\"][0]"
+              }
+            }
+          }
+        ],
+        "environment": {
+          "BUCKET": {
+            "$ref": "$[\"service\"][\"provider\"][\"compiledCloudFormationTemplate\"][\"Resources\"][\"ConsumerLambdaLambdaFunction\"][\"Properties\"][\"Environment\"][\"Variables\"][\"BUCKET\"]"
+          },
+          "OPENSEARCH": {
+            "$ref": "$[\"service\"][\"provider\"][\"compiledCloudFormationTemplate\"][\"Resources\"][\"ConsumerLambdaLambdaFunction\"][\"Properties\"][\"Environment\"][\"Variables\"][\"OPENSEARCH\"]"
+          }
+        },
+        "package": {
+          "patterns": [
+            "src/kinesis_consumer.py"
+          ],
+          "artifact": "/Users/jonatasdelatorre/Documents/ElasticSearchTest/.serverless/ConsumerLambda.zip"
+        },
+        "iamRoleStatementsName": "opensearch-test-consumer-dev",
+        "iamRoleStatements": [
+          {
+            "$ref": "$[\"service\"][\"provider\"][\"compiledCloudFormationTemplate\"][\"Resources\"][\"ConsumerLambdaIamRoleLambdaExecution\"][\"Properties\"][\"Policies\"][0][\"PolicyDocument\"][\"Statement\"][2]"
+          },
+          {
+            "$ref": "$[\"service\"][\"provider\"][\"compiledCloudFormationTemplate\"][\"Resources\"][\"ConsumerLambdaIamRoleLambdaExecution\"][\"Properties\"][\"Policies\"][0][\"PolicyDocument\"][\"Statement\"][3]"
+          }
+        ],
+        "module": ".",
+        "memory": 1024,
+        "runtime": "python3.8",
+        "vpc": {},
+        "versionLogicalId": "ConsumerLambdaLambdaVersion5IQqZTKm4SEKBR0T8CAw3zKtkQvst8KmAefH379iE"
+      }
+    },
+    "resources": {
+      "Resources": {
+        "KinesisClickStream": {
+          "Type": "AWS::Kinesis::Stream",
+          "Properties": {
+            "Name": "opensearch-test-clickstream-dev",
+            "ShardCount": 1,
+            "StreamModeDetails": {
+              "StreamMode": "PROVISIONED"
+            }
+          }
+        },
+        "ClickstreamOutput": {
+          "Type": "AWS::S3::Bucket",
+          "Properties": {
+            "VersioningConfiguration": {
+              "Status": "Enabled"
+            },
+            "BucketEncryption": {
+              "ServerSideEncryptionConfiguration": [
+                {
+                  "ServerSideEncryptionByDefault": {
+                    "SSEAlgorithm": "AES256"
+                  }
+                }
+              ]
+            },
+            "BucketName": {
+              "Fn::Sub": "opensearch-test-clickstream-output-${AWS::AccountId}-dev"
+            }
+          }
+        },
+        "OpenSearchVpc": {
+          "Type": "AWS::EC2::VPC",
+          "Properties": {
+            "CidrBlock": "10.0.0.0/24"
+          }
+        },
+        "OpenSearchSubnetA": {
+          "Type": "AWS::EC2::Subnet",
+          "Properties": {
+            "AvailabilityZone": "us-east-1a",
+            "CidrBlock": "10.0.0.1/24",
+            "VpcId": {
+              "Ref": "OpenSearchVpc"
+            }
+          }
+        },
+        "OpenSearchSecurityGroupA": {
+          "Type": "AWS::EC2::SecurityGroup",
+          "Properties": {
+            "GroupName": "opensearch-test-clickstream-dev",
+            "GroupDescription": "OpenSearch SG",
+            "SecurityGroupIngress": [
+              {
+                "CidrIp": "0.0.0.0/0",
+                "IpProtocol": "-1"
+              }
+            ],
+            "SecurityGroupEgress": [
+              {
+                "IpProtocol": "tcp",
+                "FromPort": 22,
+                "ToPort": 22,
+                "CidrIp": "10.0.0.0/24"
+              },
+              {
+                "IpProtocol": "tcp",
+                "FromPort": 443,
+                "ToPort": 443,
+                "CidrIp": "10.0.0.0/24"
+              }
+            ],
+            "VpcId": {
+              "Ref": "OpenSearchVpc"
+            }
+          }
+        },
+        "OpenSearchClickstream": {
+          "Type": "AWS::OpenSearchService::Domain",
+          "Properties": {
+            "AccessPolicies": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "AWS": "*"
+                  },
+                  "Action": [
+                    "es:*"
+                  ],
+                  "Resource": "arn:aws:es:us-east-1:103751604192:domain//*",
+                  "Condition": {
+                    "IpAddress": {
+                      "aws:SourceIp": [
+                        "189.6.237.237"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "ClusterConfig": {
+              "InstanceCount": 1,
+              "InstanceType": "t3.small.search"
+            },
+            "EBSOptions": {
+              "EBSEnabled": true,
+              "VolumeSize": 10,
+              "VolumeType": "gp2"
+            },
+            "DomainName": "opensearch-test-dev",
+            "EncryptionAtRestOptions": {
+              "Enabled": true
+            },
+            "VPCOptions": {
+              "SecurityGroupIds": [
+                {
+                  "Ref": "OpenSearchSecurityGroupA"
+                }
+              ],
+              "SubnetIds": [
+                {
+                  "Ref": "OpenSearchSubnetA"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "Outputs": {}
+    },
+    "configValidationMode": "warn",
+    "serviceFilename": "serverless.yml",
+    "initialServerlessConfig": {
+      "service": "opensearch-test",
+      "variablesResolutionMode": "20210326",
+      "custom": {
+        "$ref": "$[\"service\"][\"custom\"]"
+      },
+      "provider": {
+        "$ref": "$[\"service\"][\"provider\"]"
+      },
+      "package": {
+        "individually": true,
+        "patterns": [
+          "!venv/**",
+          "!test/**",
+          "!buildspec.yml",
+          "!functions/**",
+          "!README.md",
+          "!node_modules/**",
+          "!src/**",
+          "!package-lock.json",
+          "!package.json",
+          "!resources.yml",
+          "!step_functions.yml"
+        ],
+        "deploymentBucket": "opensearch-test-deployment-dev",
+        "artifactDirectoryName": "serverless/opensearch-test/dev/1645687308422-2022-02-24T07:21:48.422Z"
+      },
+      "functions": {
+        "$ref": "$[\"service\"][\"functions\"]"
+      },
+      "resources": {
+        "$ref": "$[\"service\"][\"resources\"]"
+      },
+      "plugins": {
+        "$ref": "$[\"service\"][\"plugins\"]"
+      }
+    },
+    "layers": {},
+    "isDashboardMonitoringPreconfigured": false
+  },
+  "package": {
+    "individually": true,
+    "artifactDirectoryName": "serverless/opensearch-test/dev/1645687308422-2022-02-24T07:21:48.422Z",
+    "artifact": ""
+  }
+}
