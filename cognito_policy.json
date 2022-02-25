@@ -1,0 +1,13 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::103751604192:role/Cognito_kibanaclickstreamtestAuth_Role"
+        },
+        "Action": "es:*",
+        "Resource": "arn:aws:es:us-east-1:103751604192:domain/opensearch-test-dev/*"
+      }
+    ]
+}

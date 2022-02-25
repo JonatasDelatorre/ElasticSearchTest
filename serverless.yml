@@ -1,6 +1,6 @@
-service: opensearch-test
+service: opensearch-sample
 
-variablesResolutionMode: 20210326
+configValidationMode: error
 
 custom:
   stage: ${opt:stage, self:provider.stage} 
@@ -18,7 +18,6 @@ provider:
   stage: dev
   region: us-east-1
   stackName: ${self:service}-${self:custom.stage}
-  lambdaHashingVersion: 20201221
   stackTags:
     Owner: JontasDelatorre
   deploymentBucket:
@@ -107,50 +106,94 @@ resources:
     OpenSearchVpc:
       Type: AWS::EC2::VPC
       Properties: 
-        CidrBlock: 10.0.0.0/24
+        CidrBlock: 10.0.0.0/16
+
+    OpenSearchVpcInternetGateway:
+      Type: AWS::EC2::InternetGateway
+      Properties:
+        Tags:
+        - Key: stack
+          Value: test
+
+    OpenSearchVpcInternetGatewayAttach:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties: 
+        InternetGatewayId: !Ref OpenSearchVpcInternetGateway
+        VpcId: !Ref OpenSearchVpc
+
+    OpenSearchRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref OpenSearchVpc
+        Tags:
+          - Key: stack
+            Value: test
+
+    OpenSearchRoute:
+      Type: AWS::EC2::Route
+      Properties: 
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId: !Ref OpenSearchVpcInternetGateway
+        RouteTableId: !Ref OpenSearchRouteTable
 
     OpenSearchSubnetA:
       Type: AWS::EC2::Subnet
       Properties: 
         AvailabilityZone: us-east-1a
-        CidrBlock: 10.0.0.1/24
+        CidrBlock: 10.0.0.0/24
+        VpcId: !Ref OpenSearchVpc
+
+    OpenSearchSubnetB:
+      Type: AWS::EC2::Subnet
+      Properties: 
+        AvailabilityZone: us-east-1b
+        MapPublicIpOnLaunch: true
+        CidrBlock: 10.0.1.0/24
         VpcId: !Ref OpenSearchVpc
 
     OpenSearchSecurityGroupA:
       Type: AWS::EC2::SecurityGroup
       Properties: 
-        GroupName: ${self:service}-clickstream-${self:custom.stage}
-        GroupDescription: OpenSearch SG
+        GroupName: ${self:service}-clickstreama-${self:custom.stage}
+        GroupDescription: OpenSearch SGB
+        SecurityGroupEgress:
+          - CidrIp: 0.0.0.0/0
+            IpProtocol: "-1"
         SecurityGroupIngress:
           - CidrIp: 0.0.0.0/0
             IpProtocol: "-1"
+            SourceSecurityGroupId: !Ref OpenSearchSecurityGroupB
+        VpcId: !Ref OpenSearchVpc
+
+    OpenSearchSecurityGroupB:
+      Type: AWS::EC2::SecurityGroup
+      Properties: 
+        GroupName: ${self:service}-clickstreamb-${self:custom.stage}
+        GroupDescription: OpenSearch SGB
         SecurityGroupEgress:
+          - CidrIp: 0.0.0.0/0
+            IpProtocol: "-1"
+        SecurityGroupIngress:
           - IpProtocol: tcp
             FromPort: 22
             ToPort: 22
-            CidrIp: 10.0.0.0/24
+            CidrIp: 10.0.1.0/24
           - IpProtocol: tcp
             FromPort: 443
             ToPort: 443
-            CidrIp: 10.0.0.0/24
+            CidrIp: 10.0.1.0/24
         VpcId: !Ref OpenSearchVpc
 
+    OpenSearchLinkedRole:
+      Type: AWS::IAM::ServiceLinkedRole
+      Properties:
+        AWSServiceName: es.amazonaws.com
+        Description: 'Role for ES to access resources in my VPC'
+
     OpenSearchClickstream:
+      DependsOn: OpenSearchLinkedRole
       Type: AWS::OpenSearchService::Domain
       Properties: 
-        AccessPolicies:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Principal:
-              AWS: "*"
-            Action:
-              - es:*
-            Resource: arn:aws:es:us-east-1:103751604192:domain//*
-            Condition:
-              IpAddress:
-                aws:SourceIp:
-                  - 189.6.237.237
         ClusterConfig: 
           InstanceCount: 1
           InstanceType: t3.small.search
@@ -158,6 +201,10 @@ resources:
           EBSEnabled: true
           VolumeSize: 10
           VolumeType: gp2
+        CognitoOptions: 
+          Enabled: true
+          IdentityPoolId: !Ref OpenSearchDashboardIdentityPool
+          UserPoolId: !Ref OpenSearchDashboardUserPool
         DomainName: ${self:service}-${self:custom.stage}
         EncryptionAtRestOptions: 
           Enabled: true
@@ -167,9 +214,87 @@ resources:
           SubnetIds: 
             - !Ref OpenSearchSubnetA
 
+    Ec2Bastion:
+      Type: AWS::EC2::Instance
+      Properties: 
+        AvailabilityZone: us-east-1b
+        ImageId: ami-033b95fb8079dc481
+        InstanceType: t2.micro
+        KeyName: bastion-opensearch
+        SecurityGroupIds: 
+          - !Ref OpenSearchSecurityGroupB
+        SubnetId: !Ref OpenSearchSubnetB
+
+    OpenSearchDashboardUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties: 
+        AdminCreateUserConfig: 
+          AllowAdminCreateUserOnly: false
+        MfaConfiguration: OFF
+        UsernameAttributes: 
+          - email
+        UserPoolName: ${self:service}-clickstream-${self:custom.stage}
+
+    OpenSearchDashboardUserPoolDomain:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties: 
+        Domain: ${self:service}-clickstream-${self:custom.stage}
+        UserPoolId: !Ref OpenSearchDashboardUserPool
+
+    OpenSearchDashboardUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties: 
+        CallbackURLs: 
+          - "https://"
+        ClientName: ${self:service}-clickstream-${self:custom.stage}
+        SupportedIdentityProviders: 
+          - COGNITO
+        UserPoolId: !Ref OpenSearchDashboardUserPool
+
+    OpenSearchDashboardIdentityPool:
+      Type: AWS::Cognito::IdentityPool
+      Properties: 
+        AllowUnauthenticatedIdentities: false
+        CognitoIdentityProviders: 
+          - ClientId: !Ref OpenSearchDashboardUserPoolClient
+            ProviderName: !GetAtt OpenSearchDashboardUserPool.ProviderName
+        IdentityPoolName: ${self:service}-clickstream-${self:custom.stage}
 
 
 plugins:
   - serverless-iam-roles-per-function # Plugin de criação de role e policy para cada lambda
   - serverless-python-requirements #Plugin para automatizar a inclusao dos pacotes presentes no requirements
-  - serverless-deployment-bucket #Plugin para gerenciar criacao de bucket de deployment....
+  - serverless-deployment-bucket #Plugin para gerenciar criacao de bucket de deployment
+
+      # OpenSearchClickstream:
+      # DependsOn: OpenSearchLinkedRole
+      # Type: AWS::OpenSearchService::Domain
+      # Properties: 
+      #   AccessPolicies:
+      #     Version: '2012-10-17'
+      #     Statement:
+      #     - Effect: Allow
+      #       Principal:
+      #         AWS: "*"
+      #       Action:
+      #         - es:*
+      #       Resource: arn:aws:es:us-east-1:103751604192:domain//*
+      #       Condition:
+      #         IpAddress:
+      #           aws:SourceIp:
+      #             - 189.6.237.237
+      #   ClusterConfig: 
+      #     InstanceCount: 1
+      #     InstanceType: t3.small.search
+      #   EBSOptions: 
+      #     EBSEnabled: true
+      #     VolumeSize: 10
+      #     VolumeType: gp2
+      #   DomainName: ${self:service}-${self:custom.stage}
+      #   EncryptionAtRestOptions: 
+      #     Enabled: true
+      #   VPCOptions: 
+      #     SecurityGroupIds: 
+      #       - !Ref OpenSearchSecurityGroupA
+      #     SubnetIds: 
+      #       - !Ref OpenSearchSubnetA

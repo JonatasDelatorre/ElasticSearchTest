@@ -107,7 +107,7 @@
       "Properties": {
         "Code": {
           "S3Bucket": "opensearch-test-deployment-dev",
-          "S3Key": "serverless/opensearch-test/dev/1645687308422-2022-02-24T07:21:48.422Z/ConsumerLambda.zip"
+          "S3Key": "serverless/opensearch-test/dev/1645748940721-2022-02-25T00:29:00.721Z/ConsumerLambda.zip"
         },
         "Handler": "src/kinesis_consumer.handler",
         "Runtime": "python3.8",
@@ -332,14 +332,47 @@
     "OpenSearchVpc": {
       "Type": "AWS::EC2::VPC",
       "Properties": {
-        "CidrBlock": "10.0.0.0/24"
+        "CidrBlock": "10.0.0.0/16"
+      }
+    },
+    "OpenSearchVpcInternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "stack",
+            "Value": "test"
+          }
+        ]
+      }
+    },
+    "OpenSearchVpcInternetGatewayAttach": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "InternetGatewayId": {
+          "Ref": "OpenSearchVpcInternetGateway"
+        },
+        "VpcId": {
+          "Ref": "OpenSearchVpc"
+        }
       }
     },
     "OpenSearchSubnetA": {
       "Type": "AWS::EC2::Subnet",
       "Properties": {
         "AvailabilityZone": "us-east-1a",
-        "CidrBlock": "10.0.0.1/24",
+        "CidrBlock": "10.0.0.0/24",
+        "VpcId": {
+          "Ref": "OpenSearchVpc"
+        }
+      }
+    },
+    "OpenSearchSubnetB": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": "us-east-1b",
+        "MapPublicIpOnLaunch": true,
+        "CidrBlock": "10.0.1.0/24",
         "VpcId": {
           "Ref": "OpenSearchVpc"
         }
@@ -348,8 +381,8 @@
     "OpenSearchSecurityGroupA": {
       "Type": "AWS::EC2::SecurityGroup",
       "Properties": {
-        "GroupName": "opensearch-test-clickstream-dev",
-        "GroupDescription": "OpenSearch SG",
+        "GroupName": "opensearch-test-clickstreama-dev",
+        "GroupDescription": "OpenSearch SGB",
         "SecurityGroupIngress": [
           {
             "CidrIp": "0.0.0.0/0",
@@ -375,31 +408,43 @@
         }
       }
     },
+    "OpenSearchSecurityGroupB": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupName": "opensearch-test-clickstreamb-dev",
+        "GroupDescription": "OpenSearch SGB",
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "IpProtocol": "-1"
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "10.0.1.0/24"
+          }
+        ],
+        "VpcId": {
+          "Ref": "OpenSearchVpc"
+        }
+      }
+    },
+    "OpenSearchLinkedRole": {
+      "Type": "AWS::IAM::ServiceLinkedRole",
+      "Properties": {
+        "AWSServiceName": "es.amazonaws.com",
+        "Description": "Role for ES to access resources in my VPC"
+      }
+    },
     "OpenSearchClickstream": {
+      "DependsOn": [
+        "OpenSearchLinkedRole"
+      ],
       "Type": "AWS::OpenSearchService::Domain",
       "Properties": {
-        "AccessPolicies": {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Effect": "Allow",
-              "Principal": {
-                "AWS": "*"
-              },
-              "Action": [
-                "es:*"
-              ],
-              "Resource": "arn:aws:es:us-east-1:103751604192:domain//*",
-              "Condition": {
-                "IpAddress": {
-                  "aws:SourceIp": [
-                    "189.6.237.237"
-                  ]
-                }
-              }
-            }
-          ]
-        },
         "ClusterConfig": {
           "InstanceCount": 1,
           "InstanceType": "t3.small.search"
@@ -424,6 +469,23 @@
               "Ref": "OpenSearchSubnetA"
             }
           ]
+        }
+      }
+    },
+    "Ec2Bastion": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "AvailabilityZone": "us-east-1b",
+        "ImageId": "ami-033b95fb8079dc481",
+        "InstanceType": "t2.micro",
+        "KeyName": "bastion-opensearch",
+        "SecurityGroupIds": [
+          {
+            "Ref": "OpenSearchSecurityGroupB"
+          }
+        ],
+        "SubnetId": {
+          "Ref": "OpenSearchSubnetB"
         }
       }
     }
